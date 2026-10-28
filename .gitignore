@@ -1,0 +1,11 @@
+
+.env
+.venv/
+instance/
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+*.sqlite3
+monitored_logs/
+*.log

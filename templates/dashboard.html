@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}SOC Dashboard | FMC Security{% endblock %}
+
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">SECURITY OPERATIONS CENTER</div>
+        <h1>Investigation Overview</h1>
+        <p>
+            Security case management and historical
+            investigation tracking.
+        </p>
+    </div>
+
+    <button class="btn btn-primary"
+            onclick="document.getElementById('newCase').showModal()">
+        + New Investigation
+    </button>
+</div>
+
+<!-- Dashboard Statistics -->
+
+<div class="stats-grid">
+
+    <div class="stat-card">
+        <div class="stat-label">TOTAL CASES</div>
+        <div class="stat-number">{{ stats.total }}</div>
+        <div class="stat-description">All investigations</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">ACTIVE CASES</div>
+        <div class="stat-number">{{ stats.active }}</div>
+        <div class="stat-description">Currently under review</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">HIGH / CRITICAL</div>
+        <div class="stat-number danger">{{ stats.critical }}</div>
+        <div class="stat-description">Open priority incidents</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">EMPLOYEES</div>
+        <div class="stat-number">{{ stats.employees }}</div>
+        <div class="stat-description">Unique employee identities</div>
+    </div>
+
+</div>
+
+<!-- Cases Table -->
+
+<section class="panel">
+
+    <div class="panel-header">
+        <div>
+            <h2>Security Investigation Cases</h2>
+            <p>Manage alerts and access employee history.</p>
+        </div>
+
+        <form method="GET" class="search-form">
+            <input
+                type="search"
+                name="email"
+                placeholder="Search employee email..."
+                value="{{ email_search }}"
+                aria-label="Search employee email">
+
+            <button class="btn btn-secondary" type="submit">
+                Search
+            </button>
+        </form>
+    </div>
+
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>CASE ID</th>
+                    <th>EMPLOYEE / CASE NAME</th>
+                    <th>ALERT TYPE</th>
+                    <th>SEVERITY</th>
+                    <th>STATUS</th>
+                    <th>ACTION</th>
+                </tr>
+            </thead>
+
+            <tbody>
+            {% for case in cases %}
+                <tr>
+                    <td>
+                        <span class="case-code">
+                            FMC-{{ "%04d" | format(case.id) }}
+                        </span>
+                    </td>
+
+                    <td class="employee-email">
+                        {{ case.employee.email }}
+                    </td>
+
+                    <td>{{ case.alert_name }}</td>
+
+                    <td>
+                        <span class="severity
+                                     {{ case.severity | lower }}">
+                            {{ case.severity }}
+                        </span>
+                    </td>
+
+                    <td>
+                        <span class="status-label">
+                            {{ case.status }}
+                        </span>
+                    </td>
+
+                    <td>
+                        <a class="action-link"
+                           href="{{ url_for('case_detail',
+                                          case_id=case.id) }}">
+                            Investigate →
+                        </a>
+                    </td>
+                </tr>
+
+            {% else %}
+                <tr>
+                    <td colspan="6" class="empty-state">
+                        No investigation cases found.
+                        Create your first investigation.
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- New Case Dialog -->
+
+<dialog id="newCase" class="modal">
+
+    <form method="POST"
+          action="{{ url_for('create_case') }}">
+
+        <div class="modal-header">
+            <div>
+                <div class="eyebrow">NEW INVESTIGATION</div>
+                <h2>Create Security Case</h2>
+            </div>
+
+            <button type="button"
+                    class="close-btn"
+                    onclick="document.getElementById('newCase').close()">
+                ×
+            </button>
+        </div>
+
+        <label>Employee Email / Case Name</label>
+        <input
+            type="email"
+            name="email"
+            maxlength="254"
+            placeholder="employee@company.com"
+            required>
+
+        <label>SIEM Alert Name</label>
+        <input
+            type="text"
+            name="alert_name"
+            maxlength="200"
+            placeholder="Suspicious Geographic Login"
+            required>
+
+        <label>Alert Severity</label>
+        <select name="severity" required>
+            <option>Medium</option>
+            <option>Low</option>
+            <option>High</option>
+            <option>Critical</option>
+        </select>
+
+        <div class="modal-actions">
+            <button type="button"
+                    class="btn btn-secondary"
+                    onclick="document.getElementById('newCase').close()">
+                Cancel
+            </button>
+
+            <button type="submit" class="btn btn-primary">
+                Create Investigation
+            </button>
+        </div>
+
+    </form>
+</dialog>
+
+{% endblock %}

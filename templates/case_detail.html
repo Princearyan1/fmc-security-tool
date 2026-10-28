@@ -1,0 +1,730 @@
+
+{% extends "base.html" %}
+
+{% block title %}
+Case FMC-{{ "%04d"|format(case.id) }}
+{% endblock %}
+
+{% block content %}
+
+<a href="{{ url_for('dashboard') }}" class="back-link">
+    ← Back to Dashboard
+</a>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">
+            CASE FMC-{{ "%04d"|format(case.id) }}
+        </div>
+
+        <h1>{{ case.employee.email }}</h1>
+        <p>{{ case.alert_name }}</p>
+    </div>
+
+    <span class="severity {{ case.severity|lower }}">
+        {{ case.severity }} Severity
+    </span>
+</div>
+
+<!-- Evidence Statistics -->
+
+<div class="stats-grid">
+
+    <div class="stat-card">
+        <div class="stat-label">UPLOADED FILES</div>
+        <div class="stat-number">
+            {{ uploads|length }}
+        </div>
+        <div class="stat-description">This case only</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">PARSED EVENTS</div>
+        <div class="stat-number">
+            {{ event_count }}
+        </div>
+        <div class="stat-description">Saved in SQLite</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">EMAIL-MATCHED EVENTS</div>
+        <div class="stat-number">
+            {{ verified_count }}
+        </div>
+        <div class="stat-description">
+            Other events remain unverified
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">PREVIOUS CASES</div>
+        <div class="stat-number">
+            {{ previous_cases|length }}
+        </div>
+        <div class="stat-description">
+            Latest 20 are shown
+        </div>
+    </div>
+
+</div>
+
+<div class="detail-grid">
+
+    <!-- LEFT CONTENT -->
+
+    <div>
+
+        <!-- Upload Evidence -->
+
+        <section class="panel detail-panel" id="evidence-upload">
+
+            <div class="section-heading">
+                <h2>Upload Security Evidence</h2>
+                <span class="feature-tag">STEP 2</span>
+            </div>
+
+            <p>
+                Upload logs exported from SIEM, EDR,
+                VPN, MFA or other security systems.
+                Files remain linked to this case.
+            </p>
+
+            <form
+                method="POST"
+                enctype="multipart/form-data"
+                action="{{ url_for('upload_logs', case_id=case.id) }}"
+                class="upload-form">
+
+                <label class="form-label" for="source_type">
+                    Log Source
+                </label>
+
+                <select
+                    name="source_type"
+                    id="source_type"
+                    required>
+
+                    {% for source in source_types %}
+                        <option value="{{ source }}">
+                            {{ source }}
+                        </option>
+                    {% endfor %}
+                </select>
+
+                <label class="form-label" for="log_file">
+                    Log File (JSON, CSV, TXT, LOG)
+                </label>
+
+                <input
+                    type="file"
+                    id="log_file"
+                    name="log_file"
+                    accept=".json,.csv,.txt,.log"
+                    required>
+
+                <button
+                    class="btn btn-primary"
+                    type="submit">
+
+                    Upload & Parse Logs
+                </button>
+            </form>
+
+            <p class="note">
+                Maximum 5 MB per file. Events with a
+                different explicit employee email
+                are excluded. Events without an email
+                are stored as unverified context.
+            </p>
+
+        </section>
+
+        
+<!-- =====================================
+     AI INVESTIGATION WORKSPACE
+===================================== -->
+
+<section class="panel detail-panel ai-investigation-panel">
+
+    <div class="section-heading">
+        <div>
+            <div class="eyebrow">INTELLIGENT INVESTIGATION</div>
+            <h2>AI Root Cause Investigator</h2>
+        </div>
+
+        <span class="feature-tag">
+            GROQ AI
+        </span>
+    </div>
+
+    <p>
+        AI examines uploaded case evidence, correlates
+        relevant historical events, identifies possible
+        root causes and requests missing evidence.
+    </p>
+
+    <div class="ai-engine-info">
+        <span class="online-dot"></span>
+        Evidence-Based Investigation Engine
+
+        <div class="ai-engine-description">
+            {{ event_count }} case events available
+            · Human review required
+        </div>
+    </div>
+
+    <form
+        method="POST"
+        action="{{ url_for('investigate_case', case_id=case.id) }}">
+
+        <button
+            type="submit"
+            class="btn btn-primary ai-run-btn"
+            {% if event_count == 0 %}disabled{% endif %}>
+
+            {% if report_data %}
+                ↻ Re-run AI Investigation
+            {% else %}
+                ✦ Run AI Investigation
+            {% endif %}
+
+        </button>
+    </form>
+
+    <p class="note">
+        This sends selected event fields and excerpts
+        to Groq. Use synthetic data until external
+        processing is approved by your organization.
+    </p>
+
+    {% if report_data %}
+
+        <div class="ai-report">
+
+            <div class="ai-report-header">
+                <div>
+                    <div class="eyebrow">INVESTIGATION REPORT</div>
+                    <h2>AI Analysis Results</h2>
+                </div>
+
+                <span class="assessment-badge">
+                    {{ report_data.assessment }}
+                </span>
+            </div>
+
+            {% if report_stale %}
+                <div class="evidence-warning">
+                    New evidence has been uploaded since
+                    this report was generated.
+                    Re-run AI Investigation to include it.
+                </div>
+            {% endif %}
+
+            <!-- Coverage -->
+
+            <div class="ai-report-meta">
+                <span>
+                    Model: {{ latest_report.model_name }}
+                </span>
+
+                <span>
+                    Current events analyzed:
+                    {{ report_data.coverage.current_events_sent }}
+                    /
+                    {{ report_data.coverage.total_current_events }}
+                </span>
+
+                <span>
+                    Historical events:
+                    {{ report_data.coverage.historical_events_sent }}
+                </span>
+            </div>
+
+            {% if report_data.coverage.current_events_sent
+                  < report_data.coverage.total_current_events %}
+
+                <div class="evidence-warning">
+                    Partial analysis: some uploaded events
+                    were outside the current AI analysis
+                    window. The findings may be incomplete.
+                </div>
+
+            {% endif %}
+
+            <!-- Executive Summary -->
+
+            <div class="ai-result-section">
+                <div class="result-heading">
+                    <span class="result-icon">01</span>
+                    <h3>Investigation Summary</h3>
+                </div>
+
+                <p>{{ report_data.summary }}</p>
+            </div>
+
+            <!-- Root Cause -->
+
+            <div class="ai-result-section">
+                <div class="result-heading">
+                    <span class="result-icon">02</span>
+                    <h3>Possible Root Cause</h3>
+                </div>
+
+                <div class="root-cause-box">
+                    <div class="root-cause-label">
+                        ROOT CAUSE STATUS:
+                        {{ report_data.root_cause_status }}
+                    </div>
+
+                    <p>
+                        {{ report_data.possible_root_cause }}
+                    </p>
+
+                    <div class="confidence-label">
+                        Evidence confidence:
+                        {{ report_data.confidence }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Supporting Evidence -->
+
+            <div class="ai-result-section">
+                <div class="result-heading">
+                    <span class="result-icon">03</span>
+                    <h3>Supporting Evidence</h3>
+                </div>
+
+                {% for item in report_data.evidence %}
+
+                    <div class="evidence-item">
+                        <span class="evidence-ref">
+                            {{ item.event_ref }}
+                        </span>
+
+                        <p>{{ item.explanation }}</p>
+                    </div>
+
+                {% else %}
+
+                    <p>
+                        No supporting event citations
+                        were returned by the AI.
+                    </p>
+
+                {% endfor %}
+            </div>
+
+            <!-- Missing Evidence -->
+
+            <div class="ai-result-section">
+
+                <div class="result-heading">
+                    <span class="result-icon">04</span>
+                    <h3>Additional Evidence Required</h3>
+                </div>
+
+                {% for item in report_data.missing_evidence %}
+
+                    <div class="missing-evidence-card">
+
+                        <div class="missing-evidence-heading">
+                            <span class="source-badge">
+                                {{ item.source_type }}
+                            </span>
+
+                            <span class="required-label">
+                                REQUESTED
+                            </span>
+                        </div>
+
+                        <p>
+                            <strong>Why needed:</strong>
+                            {{ item.reason }}
+                        </p>
+
+                        <p>
+                            <strong>What to upload:</strong>
+                            {{ item.request }}
+                        </p>
+
+                        <a
+                            href="#evidence-upload"
+                            class="action-link">
+                            Upload Additional Evidence →
+                        </a>
+
+                    </div>
+
+                {% else %}
+
+                    <div class="no-history">
+                        AI has not requested more evidence.
+                        Analyst verification is still required.
+                    </div>
+
+                {% endfor %}
+            </div>
+
+            <!-- Next Actions -->
+
+            <div class="ai-result-section">
+                <div class="result-heading">
+                    <span class="result-icon">05</span>
+                    <h3>Recommended Next Actions</h3>
+                </div>
+
+                <ol class="action-list">
+
+                    {% for action in report_data.recommendations %}
+                        <li>{{ action }}</li>
+
+                    {% else %}
+                        <li>
+                            Analyst should review the
+                            available security evidence.
+                        </li>
+                    {% endfor %}
+
+                </ol>
+            </div>
+
+            <div class="analyst-review-notice">
+                AI-generated findings are advisory.
+                They do not confirm an attack or authorize
+                containment actions without analyst review.
+            </div>
+
+        </div>
+
+    {% else %}
+
+        <div class="ai-placeholder">
+            <div class="ai-placeholder-icon">✦</div>
+
+            <h3>Investigation Not Started</h3>
+
+            <p>
+                Upload security logs, then run AI analysis
+                to generate an initial investigation report.
+            </p>
+        </div>
+
+    {% endif %}
+
+</section>
+
+
+        <!-- Uploaded Evidence History -->
+
+        <section class="panel detail-panel">
+
+            <h2>Collected Evidence</h2>
+
+            {% if uploads %}
+
+            <div class="table-scroll">
+                <table class="compact-table">
+                    <thead>
+                        <tr>
+                            <th>FILE</th>
+                            <th>SOURCE</th>
+                            <th>IMPORTED</th>
+                            <th>EXCLUDED</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for upload in uploads %}
+                        <tr>
+                            <td>{{ upload.filename }}</td>
+                            <td>{{ upload.source_type }}</td>
+                            <td>{{ upload.imported_count }}</td>
+                            <td>{{ upload.skipped_count }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% else %}
+
+                <div class="no-history">
+                    No evidence uploaded yet.
+                </div>
+
+            {% endif %}
+
+        </section>
+
+        <!-- Event Timeline -->
+
+        <section class="panel detail-panel">
+
+            <div class="section-heading">
+                <h2>Parsed Event Timeline</h2>
+                <span class="feature-tag">
+                    {{ event_count }} Events
+                </span>
+            </div>
+
+            <p>
+                Latest 200 events by import order.
+                Timestamps come from source logs
+                and may use different time zones.
+            </p>
+
+            {% if events %}
+
+            <div class="table-scroll">
+                <table class="compact-table">
+
+                    <thead>
+                        <tr>
+                            <th>REF</th>
+                            <th>TIME</th>
+                            <th>SOURCE</th>
+                            <th>EVENT</th>
+                            <th>IP / DEVICE</th>
+                            <th>IDENTITY</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+
+                    {% for event in events %}
+
+                        <tr>
+                            <td>
+                                <span class="case-code">C{{ event.id }}</span>
+                            </td>
+                            <td>
+                                {{ event.timestamp or 'Unknown' }}
+                            </td>
+
+                            <td>
+                                {{ event.upload.source_type }}
+                            </td>
+
+                            <td>
+                                <strong>{{ event.event_type }}</strong>
+
+                                <div class="event-message">
+                                    {{ event.message or event.outcome or '-' }}
+                                </div>
+                            </td>
+
+                            <td>
+                                {{ event.source_ip or '—' }}
+
+                                <div class="event-message">
+                                    {{ event.device or '' }}
+                                </div>
+                            </td>
+
+                            <td>
+                                {% if event.match_status == 'Matched' %}
+
+                                    <span class="match matched">
+                                        Matched
+                                    </span>
+
+                                {% else %}
+
+                                    <span class="match unverified">
+                                        Unverified
+                                    </span>
+
+                                {% endif %}
+                            </td>
+                        </tr>
+
+                    {% endfor %}
+
+                    </tbody>
+                </table>
+            </div>
+
+            {% else %}
+
+                <div class="no-history">
+                    Upload a log file to see normalized events.
+                </div>
+
+            {% endif %}
+
+        </section>
+
+    </div>
+
+    <!-- RIGHT CONTENT -->
+
+    <div>
+
+        <!-- Case Status -->
+
+        <section class="panel detail-panel">
+
+            <h2>Investigation Status</h2>
+
+            <form
+                method="POST"
+                action="{{ url_for('update_status', case_id=case.id) }}">
+
+                <label class="form-label">
+                    Current Status
+                </label>
+
+                <select name="status">
+
+                    {% for status in statuses %}
+
+                    <option value="{{ status }}"
+                        {% if case.status == status %}selected{% endif %}>
+                        {{ status }}
+                    </option>
+
+                    {% endfor %}
+                </select>
+
+                <button
+                    type="submit"
+                    class="btn btn-primary full-width">
+
+                    Update Status
+                </button>
+            </form>
+
+        </section>
+
+        <!-- Historical Comparison -->
+
+        <section class="panel detail-panel">
+
+            <div class="section-heading">
+                <h2>Historical Comparison</h2>
+                <span class="feature-tag">EMAIL LINKED</span>
+            </div>
+
+            <p>
+                Compared against email-matched events
+                from previously created cases.
+                Absence from history does not mean
+                an activity is malicious.
+            </p>
+
+            <div class="compare-block">
+
+                <strong>
+                    IP Addresses Not Seen Previously
+                </strong>
+
+                {% if comparison.has_ip_baseline %}
+
+                    <div class="compare-value">
+                        {{ comparison.new_ips|join(', ')
+                           or 'None among current matched events' }}
+                    </div>
+
+                {% else %}
+
+                    <div class="compare-value muted">
+                        No matched historical IP baseline yet.
+                    </div>
+
+                {% endif %}
+            </div>
+
+            <div class="compare-block">
+
+                <strong>
+                    IPs Also Seen Previously
+                </strong>
+
+                <div class="compare-value">
+                    {{ comparison.shared_ips|join(', ')
+                       or 'None found' }}
+                </div>
+            </div>
+
+            <div class="compare-block">
+
+                <strong>
+                    Devices Not Seen Previously
+                </strong>
+
+                {% if comparison.has_device_baseline %}
+
+                    <div class="compare-value">
+                        {{ comparison.new_devices|join(', ')
+                           or 'None among current matched events' }}
+                    </div>
+
+                {% else %}
+
+                    <div class="compare-value muted">
+                        No matched historical device baseline yet.
+                    </div>
+
+                {% endif %}
+            </div>
+
+            <div class="compare-block">
+
+                <strong>
+                    Devices Also Seen Previously
+                </strong>
+
+                <div class="compare-value">
+                    {{ comparison.shared_devices|join(', ')
+                       or 'None found' }}
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Employee History -->
+
+        <section class="panel detail-panel">
+
+            <div class="section-heading">
+                <h2>Employee History</h2>
+
+                <span class="feature-tag">
+                    {{ previous_cases|length }} Previous
+                </span>
+            </div>
+
+            <div class="history-list">
+
+                {% for old_case in previous_cases %}
+
+                <a
+                    href="{{ url_for('case_detail', case_id=old_case.id) }}"
+                    class="history-card">
+
+                    <strong>
+                        FMC-{{ "%04d"|format(old_case.id) }}
+                    </strong>
+
+                    <span>{{ old_case.alert_name }}</span>
+                    <small>{{ old_case.status }}</small>
+
+                </a>
+
+                {% else %}
+
+                <div class="no-history">
+                    No previous investigations.
+                </div>
+
+                {% endfor %}
+
+            </div>
+
+        </section>
+
+    </div>
+</div>
+
+{% endblock %}

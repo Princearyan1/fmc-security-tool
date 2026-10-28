@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>
+        {% block title %}FMC Security Tool{% endblock %}
+    </title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<div class="app-layout">
+
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-symbol">F</div>
+            <div>
+                <strong>FRESENIUS</strong>
+                <small>MEDICAL CARE</small>
+            </div>
+        </div>
+
+        <div class="sidebar-label">SECURITY OPERATIONS</div>
+
+        <nav>
+            <a href="{{ url_for('dashboard') }}"
+               class="nav-item">
+                <span>▦</span> SOC Dashboard
+            </a>
+
+            <a href="{{ url_for('dashboard') }}"
+               class="nav-item">
+                <span>◫</span> Investigation Cases
+            </a>
+        </nav>
+
+        <div class="sidebar-bottom">
+            <div class="online-dot"></div>
+            Local Demo System
+            <small>AI SOC Investigator · v1.0</small>
+        </div>
+    </aside>
+
+    <div class="main-area">
+
+        <header class="topbar">
+            <div>
+                <span class="breadcrumb">
+                    FMC SECURITY / INVESTIGATION CENTER
+                </span>
+            </div>
+
+            <div class="header-right">
+                <span class="system-status">
+                    <span class="online-dot"></span>
+                    SYSTEM ONLINE
+                </span>
+                <span class="user-avatar">SOC</span>
+            </div>
+        </header>
+
+        <main class="page-content">
+            {% with messages =
+                get_flashed_messages(with_categories=true) %}
+
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+
+    </div>
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>
