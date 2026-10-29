@@ -239,6 +239,21 @@ Case FMC-{{ "%04d"|format(case.id) }}
                     {{ report_data.coverage.historical_events_sent }}
                 </span>
             </div>
+            <!-- STEP 6C - Evidence Validation Notes -->
+
+{% if report_data.get('review_flags') %}
+
+    <div class="evidence-validation-notes">
+        <h3>Evidence Validation Notes</h3>
+
+        <ul>
+            {% for note in report_data.get('review_flags', []) %}
+                <li>{{ note }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+{% endif %}
 
             {% if report_data.coverage.current_events_sent
                   < report_data.coverage.total_current_events %}
@@ -315,56 +330,90 @@ Case FMC-{{ "%04d"|format(case.id) }}
                 {% endfor %}
             </div>
 
-            <!-- Missing Evidence -->
+            
+<!-- Missing Evidence -->
 
-            <div class="ai-result-section">
+<div class="ai-result-section">
 
-                <div class="result-heading">
-                    <span class="result-icon">04</span>
-                    <h3>Additional Evidence Required</h3>
-                </div>
+    <div class="result-heading">
+        <span class="result-icon">04</span>
+        <h3>Additional Evidence Recommendations</h3>
+    </div>
 
-                {% for item in report_data.missing_evidence %}
+    {% for item in report_data.missing_evidence %}
 
-                    <div class="missing-evidence-card">
+        <div class="missing-evidence-card">
 
-                        <div class="missing-evidence-heading">
-                            <span class="source-badge">
-                                {{ item.source_type }}
-                            </span>
+            <div class="missing-evidence-heading">
 
-                            <span class="required-label">
-                                REQUESTED
-                            </span>
-                        </div>
+                <span class="source-badge">
+                    {{ item.source_type }}
+                </span>
 
-                        <p>
-                            <strong>Why needed:</strong>
-                            {{ item.reason }}
-                        </p>
+                {% set priority = item.get('priority', 'Review suggested') %}
 
-                        <p>
-                            <strong>What to upload:</strong>
-                            {{ item.request }}
-                        </p>
+                <span class="required-label
+                    {% if priority == 'Required to resolve' %}
+                        priority-required
+                    {% else %}
+                        priority-optional
+                    {% endif %}">
 
-                        <a
-                            href="#evidence-upload"
-                            class="action-link">
-                            Upload Additional Evidence →
-                        </a>
+                    {{ priority }}
 
-                    </div>
+                </span>
 
-                {% else %}
-
-                    <div class="no-history">
-                        AI has not requested more evidence.
-                        Analyst verification is still required.
-                    </div>
-
-                {% endfor %}
             </div>
+
+            <p>
+                <strong>Why needed:</strong>
+                {{ item.reason }}
+            </p>
+
+            <p>
+                <strong>What to check / request:</strong>
+                {{ item.request }}
+            </p>
+
+            {% if item.get('already_observed') %}
+
+                <p class="evidence-already-available">
+                    Evidence of this type is already
+                    present in the SIEM export.
+                    Check available fields first.
+                </p>
+
+            {% endif %}
+
+            {% if priority == 'Required to resolve' %}
+
+                <a href="#evidence-upload"
+                   class="action-link">
+                    Upload Missing Evidence →
+                </a>
+
+            {% else %}
+
+                <a href="#evidence-upload"
+                   class="action-link">
+                    Upload Only If Needed →
+                </a>
+
+            {% endif %}
+
+        </div>
+
+    {% else %}
+
+        <div class="no-history">
+            No additional evidence requests currently.
+            Analyst verification is still required.
+        </div>
+
+    {% endfor %}
+
+</div>
+
 
             <!-- Next Actions -->
 
@@ -456,6 +505,205 @@ Case FMC-{{ "%04d"|format(case.id) }}
             {% endif %}
 
         </section>
+        
+<!-- ==========================================
+     STEP 4 - CORRELATION WORKSPACE
+========================================== -->
+
+<section class="panel detail-panel">
+
+    <div class="section-heading">
+        <div>
+            <div class="eyebrow">
+                SECURITY EVENT CORRELATION
+            </div>
+
+            <h2>Cross-Source Investigation Timeline</h2>
+        </div>
+
+        <span class="feature-tag">
+            CORRELATION ACTIVE
+        </span>
+    </div>
+
+    <p>
+        Related security events from different
+        log sources are grouped using available
+        identity, device, IP and timestamp evidence.
+    </p>
+
+    <!-- Correlation Statistics -->
+
+    <div class="correlation-stats">
+
+        <div class="correlation-stat">
+            <strong>{{ correlation.total_processed }}</strong>
+            <span>Events Analyzed</span>
+        </div>
+
+        <div class="correlation-stat">
+            <strong>
+                {{ correlation.sources|length }}
+            </strong>
+            <span>Log Sources</span>
+        </div>
+
+        <div class="correlation-stat">
+            <strong>
+                {{ correlation.relationships|length }}
+            </strong>
+            <span>Evidence Links</span>
+        </div>
+
+        <div class="correlation-stat">
+            <strong>
+                {{ correlation.unknown_timestamps }}
+            </strong>
+            <span>Unknown Times</span>
+        </div>
+
+    </div>
+
+    {% if event_count > correlation.total_processed %}
+        <div class="evidence-warning">
+            Only {{ correlation.total_processed }} of
+            {{ event_count }} saved events are displayed.
+            This view is not exhaustive.
+        </div>
+    {% endif %}
+
+    <!-- Sources -->
+
+    <div class="source-list">
+
+        {% for source, count in correlation.sources.items() %}
+
+            <span class="correlation-source">
+                {{ source }} · {{ count }}
+            </span>
+
+        {% endfor %}
+
+    </div>
+
+    <!-- Timeline -->
+
+    {% if correlation.timeline %}
+
+        <div class="investigation-timeline">
+
+            {% for event in correlation.timeline %}
+
+            <div class="timeline-record">
+
+                <div class="timeline-side">
+
+                    <div class="timeline-dot"></div>
+
+                    <span class="timeline-time">
+                        {{ event.timestamp_utc or 'Time Unknown' }}
+                    </span>
+
+                </div>
+
+                <div class="timeline-event">
+
+                    <div class="timeline-event-header">
+
+                        <span class="source-badge">
+                            {{ event.source }}
+                        </span>
+
+                        <a
+                            href="#event-{{ event.ref }}"
+                            class="case-code">
+
+                            {{ event.ref }}
+
+                        </a>
+
+                    </div>
+
+                    <h3>{{ event.event_type }}</h3>
+
+                    <div class="timeline-details">
+
+                        {% if event.ip %}
+                        <span>IP: {{ event.ip }}</span>
+                        {% endif %}
+
+                        {% if event.device %}
+                        <span>Device: {{ event.device }}</span>
+                        {% endif %}
+
+                        {% if event.outcome %}
+                        <span>
+                            Outcome: {{ event.outcome }}
+                        </span>
+                        {% endif %}
+
+                    </div>
+
+                    {% if event.message %}
+
+                    <p class="timeline-message">
+                        {{ event.message }}
+                    </p>
+
+                    {% endif %}
+
+                    <div class="correlation-result">
+
+                        <span class="correlation-level
+                                     {{ event.correlation_level|lower }}">
+
+                            {{ event.correlation_level }}
+
+                        </span>
+
+                        <p>
+                            {{ event.correlation_reason }}
+                        </p>
+
+                    </div>
+
+                    {% if event.related_ref %}
+
+                    <div class="linked-evidence">
+                        Related Event:
+                        <strong>
+                            {{ event.related_ref }}
+                        </strong>
+                    </div>
+
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+    {% else %}
+
+        <div class="no-history">
+            No events available for correlation.
+            Upload security logs to begin.
+        </div>
+
+    {% endif %}
+
+    <div class="correlation-disclaimer">
+        Correlation is investigative context only.
+        Shared IPs, devices or timestamps do not
+        independently confirm user identity or
+        malicious activity.
+    </div>
+
+</section>
+
 
         <!-- Event Timeline -->
 
@@ -494,7 +742,7 @@ Case FMC-{{ "%04d"|format(case.id) }}
 
                     {% for event in events %}
 
-                        <tr>
+                        <tr id="event-C{{ event.id }}">
                             <td>
                                 <span class="case-code">C{{ event.id }}</span>
                             </td>
@@ -571,11 +819,11 @@ Case FMC-{{ "%04d"|format(case.id) }}
                 method="POST"
                 action="{{ url_for('update_status', case_id=case.id) }}">
 
-                <label class="form-label">
+                <label class="form-label" for="case_status">
                     Current Status
                 </label>
 
-                <select name="status">
+                <select id="case_status" name="status">
 
                     {% for status in statuses %}
 

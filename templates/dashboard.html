@@ -157,24 +157,26 @@
             </button>
         </div>
 
-        <label>Employee Email / Case Name</label>
+        <label for="case_email">Employee Email / Case Name</label>
         <input
+            id="case_email"
             type="email"
             name="email"
             maxlength="254"
             placeholder="employee@company.com"
             required>
 
-        <label>SIEM Alert Name</label>
+        <label for="alert_name">SIEM Alert Name</label>
         <input
+            id="alert_name"
             type="text"
             name="alert_name"
             maxlength="200"
             placeholder="Suspicious Geographic Login"
             required>
 
-        <label>Alert Severity</label>
-        <select name="severity" required>
+        <label for="severity">Alert Severity</label>
+        <select id="severity" name="severity" required>
             <option>Medium</option>
             <option>Low</option>
             <option>High</option>

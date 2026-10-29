@@ -1,41 +1,67 @@
 
-import json
-
-from services.ai_investigator import run_ai_investigation
-
 import hashlib
+import json
 import os
 import re
+
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
+
 from flask import (
-    Flask, flash, redirect,
-    render_template, request, url_for
+    Flask,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for
 )
+
+from services.evidence_profiler import profile_and_select
+
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
 from services.log_parser import parse_log_file
+from services.ai_investigator import run_ai_investigation
+from services.correlation_engine import build_correlation
+
+from services.streaming_import import import_case_stream
+
+
+# ==========================================
+# APPLICATION CONFIGURATION
+# ==========================================
 
 load_dotenv()
 
 app = Flask(__name__)
 
 app.config["SECRET_KEY"] = os.getenv(
-    "SECRET_KEY", "local-development-only"
+    "SECRET_KEY",
+    "local-development-only"
 )
+
 app.config["SQLALCHEMY_DATABASE_URI"] = (
     "sqlite:///fmc_security.db"
 )
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
+
+app.config["MAX_CONTENT_LENGTH"] = 21 * 1024 * 1024
 
 db = SQLAlchemy(app)
 
+
 SOURCE_TYPES = [
-    "SIEM", "Windows", "Linux",
-    "EDR", "Firewall", "VPN", "MFA", "Other"
+    "SIEM",
+    "Windows",
+    "Linux",
+    "EDR",
+    "Firewall",
+    "VPN",
+    "MFA",
+    "Other"
 ]
 
 STATUSES = [
@@ -56,7 +82,11 @@ def current_time():
 # ==========================================
 
 class Employee(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
 
     email = db.Column(
         db.String(254),
@@ -72,7 +102,11 @@ class Employee(db.Model):
 
 
 class SecurityCase(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
 
     employee_id = db.Column(
         db.Integer,
@@ -122,7 +156,11 @@ class SecurityCase(db.Model):
 
 
 class EvidenceUpload(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
 
     case_id = db.Column(
         db.Integer,
@@ -175,14 +213,19 @@ class EvidenceUpload(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint(
-            "case_id", "sha256",
+            "case_id",
+            "sha256",
             name="unique_file_per_case"
         ),
     )
 
 
 class SecurityEvent(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+
+    id = db.Column(
+        db.Integer,
+        primary_key=True
+    )
 
     case_id = db.Column(
         db.Integer,
@@ -199,14 +242,23 @@ class SecurityEvent(db.Model):
     )
 
     timestamp = db.Column(db.String(80))
+
     user_email = db.Column(db.String(254))
+
     source_ip = db.Column(db.String(100))
+
     device = db.Column(db.String(160))
+
     event_type = db.Column(db.String(200))
+
     outcome = db.Column(db.String(100))
+
     mfa_status = db.Column(db.String(120))
+
     vpn_status = db.Column(db.String(120))
+
     message = db.Column(db.Text)
+
     raw_payload = db.Column(db.Text)
 
     match_status = db.Column(
@@ -264,6 +316,7 @@ class InvestigationReport(db.Model):
         default=current_time
     )
 
+
 # ==========================================
 # DASHBOARD
 # ==========================================
@@ -278,6 +331,7 @@ def dashboard():
     query = SecurityCase.query
 
     if email_search:
+
         query = query.join(Employee).filter(
             Employee.email.contains(email_search)
         )
@@ -288,6 +342,7 @@ def dashboard():
     ).all()
 
     stats = {
+
         "total": SecurityCase.query.count(),
 
         "active": SecurityCase.query.filter(
@@ -295,7 +350,9 @@ def dashboard():
         ).count(),
 
         "critical": SecurityCase.query.filter(
-            SecurityCase.severity.in_(["High", "Critical"]),
+            SecurityCase.severity.in_(
+                ["High", "Critical"]
+            ),
             SecurityCase.status != "Closed"
         ).count(),
 
@@ -344,18 +401,26 @@ def create_case():
             "Low", "Medium", "High", "Critical"
         ]
     ):
+
         flash(
             "Please enter valid case details.",
             "error"
         )
-        return redirect(url_for("dashboard"))
+
+        return redirect(
+            url_for("dashboard")
+        )
 
     employee = Employee.query.filter_by(
         email=email
     ).first()
 
     if employee is None:
-        employee = Employee(email=email)
+
+        employee = Employee(
+            email=email
+        )
+
         db.session.add(employee)
         db.session.flush()
 
@@ -382,7 +447,9 @@ def create_case():
 
 
 # ==========================================
-# CASE DETAILS + HISTORICAL COMPARISON
+# CASE DETAILS
+# HISTORICAL COMPARISON
+# CROSS-SOURCE CORRELATION
 # ==========================================
 
 @app.route("/cases/<int:case_id>")
@@ -393,6 +460,10 @@ def case_detail(case_id):
         case_id
     )
 
+    # --------------------------------------
+    # PREVIOUS CASES
+    # --------------------------------------
+
     previous_cases = SecurityCase.query.filter(
         SecurityCase.employee_id == case.employee_id,
         SecurityCase.id < case.id
@@ -400,11 +471,19 @@ def case_detail(case_id):
         SecurityCase.created_at.desc()
     ).limit(20).all()
 
+    # --------------------------------------
+    # UPLOADED FILES
+    # --------------------------------------
+
     uploads = EvidenceUpload.query.filter_by(
         case_id=case.id
     ).order_by(
         EvidenceUpload.id.desc()
     ).all()
+
+    # --------------------------------------
+    # CURRENT CASE EVENTS
+    # --------------------------------------
 
     events = SecurityEvent.query.filter_by(
         case_id=case.id
@@ -421,7 +500,10 @@ def case_detail(case_id):
         match_status="Matched"
     ).count()
 
-    # Only explicitly email-matched events are compared.
+    # --------------------------------------
+    # EXPLICITLY EMAIL-MATCHED EVENTS
+    # --------------------------------------
+
     current_verified = SecurityEvent.query.filter_by(
         case_id=case.id,
         match_status="Matched"
@@ -430,12 +512,17 @@ def case_detail(case_id):
     historical_verified = []
 
     if previous_cases:
+
         historical_verified = SecurityEvent.query.filter(
             SecurityEvent.case_id.in_(
                 [c.id for c in previous_cases]
             ),
             SecurityEvent.match_status == "Matched"
         ).all()
+
+    # --------------------------------------
+    # HISTORICAL IP COMPARISON
+    # --------------------------------------
 
     current_ips = {
         e.source_ip
@@ -462,7 +549,10 @@ def case_detail(case_id):
     }
 
     comparison = {
-        "has_ip_baseline": bool(historical_ips),
+
+        "has_ip_baseline": bool(
+            historical_ips
+        ),
 
         "new_ips": sorted(
             current_ips - historical_ips
@@ -484,8 +574,20 @@ def case_detail(case_id):
             current_devices & historical_devices
         )
     }
-    
-    # Latest AI investigation for this case
+
+    # ======================================
+    # STEP 4 - CROSS-SOURCE CORRELATION
+    # ======================================
+
+    correlation = build_correlation(
+        current_events=events,
+        historical_events=historical_verified
+    )
+
+    # ======================================
+    # LATEST AI INVESTIGATION REPORT
+    # ======================================
+
     latest_report = InvestigationReport.query.filter_by(
         case_id=case.id
     ).order_by(
@@ -496,6 +598,7 @@ def case_detail(case_id):
     report_stale = False
 
     if latest_report:
+
         report_data = json.loads(
             latest_report.report_json
         )
@@ -504,20 +607,37 @@ def case_detail(case_id):
             event_count > latest_report.total_event_count
         )
 
+    # ======================================
+    # RENDER CASE WORKSPACE
+    # ======================================
 
     return render_template(
         "case_detail.html",
+
         case=case,
+
         previous_cases=previous_cases,
+
         source_types=SOURCE_TYPES,
+
         statuses=STATUSES,
+
         uploads=uploads,
+
         events=events,
+
         event_count=event_count,
+
         verified_count=verified_count,
+
         comparison=comparison,
+
+        correlation=correlation,
+
         latest_report=latest_report,
+
         report_data=report_data,
+
         report_stale=report_stale
     )
 
@@ -548,6 +668,7 @@ def upload_logs(case_id):
         or log_file is None
         or not log_file.filename
     ):
+
         flash(
             "Choose a log file and its source.",
             "error"
@@ -565,108 +686,69 @@ def upload_logs(case_id):
     )[:255]
 
     if not filename:
-        flash("Invalid filename.", "error")
-        return redirect(
-            url_for("case_detail", case_id=case_id)
-        )
 
-    contents = log_file.read()
-
-    digest = hashlib.sha256(
-        contents
-    ).hexdigest()
-
-    duplicate = EvidenceUpload.query.filter_by(
-        case_id=case.id,
-        sha256=digest
-    ).first()
-
-    if duplicate:
         flash(
-            "This exact file was already uploaded "
-            "to this case.",
+            "Invalid filename.",
             "error"
         )
 
         return redirect(
-            url_for("case_detail", case_id=case_id)
+            url_for(
+                "case_detail",
+                case_id=case_id
+            )
         )
 
+    
+    # STEP 6D-A - Streaming upload and atomic import
+
     try:
-        records = parse_log_file(
-            contents,
-            filename
+        imported, skipped = import_case_stream(
+            input_stream=log_file.stream,
+            filename=filename,
+            case_id=case.id,
+            employee_email=case.employee.email,
+            source_type=source_type,
+            db=db,
+            upload_model=EvidenceUpload,
+            event_model=SecurityEvent,
         )
 
     except ValueError as exc:
+        db.session.rollback()
         flash(str(exc), "error")
 
         return redirect(
             url_for("case_detail", case_id=case_id)
         )
 
-    accepted = []
-    skipped = 0
+    except Exception as exc:
+        db.session.rollback()
 
-    for record in records:
-
-        email = record["user_email"]
-
-        # Explicit other-employee events do not
-        # belong in this employee case.
-        if email and email != case.employee.email:
-            skipped += 1
-            continue
-
-        record["match_status"] = (
-            "Matched" if email else "Unverified"
+        app.logger.warning(
+            "SIEM upload failed: %s",
+            type(exc).__name__,
         )
 
-        accepted.append(record)
-
-    if not accepted:
         flash(
-            "No events can be linked to this employee. "
-            "No changes saved.",
-            "error"
+            "Upload failed. No changes saved.",
+            "error",
         )
 
         return redirect(
             url_for("case_detail", case_id=case_id)
         )
 
-    upload = EvidenceUpload(
-        case_id=case.id,
-        filename=filename,
-        source_type=source_type,
-        sha256=digest,
-        imported_count=len(accepted),
-        skipped_count=skipped
-    )
-
-    db.session.add(upload)
-    db.session.flush()
-
-    for record in accepted:
-        db.session.add(
-            SecurityEvent(
-                case_id=case.id,
-                upload_id=upload.id,
-                **record
-            )
-        )
-
-    db.session.commit()
-
     flash(
-        f"Imported {len(accepted)} events. "
+        f"Imported {imported} events. "
         f"Excluded {skipped} events with another email.",
-        "success"
+        "success",
     )
 
     return redirect(
         url_for("case_detail", case_id=case_id)
     )
+
 
 
 # ==========================================
@@ -687,9 +769,14 @@ def update_status(case_id):
     status = request.form.get("status")
 
     if status not in STATUSES:
-        flash("Invalid case status.", "error")
+
+        flash(
+            "Invalid case status.",
+            "error"
+        )
 
     else:
+
         case.status = status
         db.session.commit()
 
@@ -699,19 +786,22 @@ def update_status(case_id):
         )
 
     return redirect(
-        url_for("case_detail", case_id=case_id)
+        url_for(
+            "case_detail",
+            case_id=case_id
+        )
     )
 
 
 # ==========================================
-# UPLOAD SIZE ERROR
+# FILE UPLOAD SIZE ERROR
 # ==========================================
 
 @app.errorhandler(413)
 def too_large(_error):
 
     flash(
-        "File too large. Maximum upload size is 5 MB.",
+        "File too large. Maximum upload size is 20 MB.",
         "error"
     )
 
@@ -722,7 +812,7 @@ def too_large(_error):
 
 
 # ==========================================
-# AI INVESTIGATION ROUTE
+# GROQ AI INVESTIGATION ROUTE
 # ==========================================
 
 @app.route(
@@ -741,65 +831,123 @@ def investigate_case(case_id):
     ).count()
 
     if total_events == 0:
+
         flash(
             "Upload security logs before AI investigation.",
             "error"
         )
 
         return redirect(
-            url_for("case_detail", case_id=case.id)
+            url_for(
+                "case_detail",
+                case_id=case.id
+            )
         )
 
-    # Latest current-case events.
-    current_events = SecurityEvent.query.filter_by(
-        case_id=case.id
-    ).order_by(
-        SecurityEvent.id.desc()
-    ).limit(80).all()
+    # --------------------------------------
+    # CURRENT CASE EVIDENCE
+    # --------------------------------------
 
-    current_events.reverse()
+      # STEP 6A - Stream and profile current-case evidence
+    current_events, selection_context = profile_and_select(
+        events=(
+            SecurityEvent.query
+            .filter_by(case_id=case.id)
+            .order_by(SecurityEvent.id.asc())
+            .yield_per(500)
+        ),
+        total_in_case=total_events,
+        max_selected=12
+    )
 
-    # Previous-case evidence belonging to
-    # the same employee identity.
+    # --------------------------------------
+    # HISTORICAL EVIDENCE
+    # --------------------------------------
+
     historical_events = (
+
         SecurityEvent.query
+
         .join(
             SecurityCase,
             SecurityEvent.case_id == SecurityCase.id
         )
+
         .filter(
             SecurityCase.employee_id == case.employee_id,
             SecurityCase.id < case.id,
             SecurityEvent.match_status == "Matched"
         )
+
         .order_by(
             SecurityEvent.id.desc()
         )
+
         .limit(25)
+
         .all()
     )
 
     historical_events.reverse()
+    
+    # STEP 4 - Build correlated evidence for AI
+    correlation_context = build_correlation(
+        current_events=current_events,
+        historical_events=historical_events
+    )
+
+
+    # --------------------------------------
+    # RUN GROQ AI INVESTIGATION
+    # --------------------------------------
 
     try:
+
         result = run_ai_investigation(
             alert_name=case.alert_name,
             current_events=current_events,
             historical_events=historical_events,
-            total_current_count=total_events
+            total_current_count=total_events,
+            correlation_context=correlation_context,
+            selection_context=selection_context
         )
 
     except ValueError as exc:
-        flash(str(exc), "error")
+
+        flash(
+            str(exc),
+            "error"
+        )
 
         return redirect(
-            url_for("case_detail", case_id=case.id)
+            url_for(
+                "case_detail",
+                case_id=case.id
+            )
         )
 
     except Exception as exc:
+
+        status_code = getattr(exc, "status_code", None)
+        body = getattr(exc, "body", None)
+
+        error_info = (
+            body.get("error", {})
+            if isinstance(body, dict)
+            else {}
+        )
+
+        error_code = (
+            error_info.get("code", "unknown")
+            if isinstance(error_info, dict)
+            else "unknown"
+        )
+
         app.logger.warning(
-            "AI investigation failed: %s",
-            type(exc).__name__
+            "AI investigation failed: %s | HTTP=%s | code=%s",
+            type(exc).__name__,
+            status_code,
+            str(error_code)[:80]
         )
 
         flash(
@@ -809,24 +957,43 @@ def investigate_case(case_id):
         )
 
         return redirect(
-            url_for("case_detail", case_id=case.id)
+            url_for(
+                "case_detail",
+                case_id=case.id
+            )
         )
 
+    # --------------------------------------
+    # SAVE AI REPORT
+    # --------------------------------------
+
     new_report = InvestigationReport(
+
         case_id=case.id,
+
         model_name=result["model"],
+
         report_json=json.dumps(
             result,
             ensure_ascii=False
         ),
+
         total_event_count=total_events
     )
 
     db.session.add(new_report)
 
-    # Keep analyst's closed cases unchanged.
+    # Preserve analyst-closed cases.
+    # STEP 6C - Only blocking evidence gaps
+    # should put the case on hold.
     if case.status != "Closed":
-        if result["missing_evidence"]:
+
+        blocking_evidence = any(
+            item.get("priority") == "Required to resolve"
+            for item in result.get("missing_evidence", [])
+        )
+
+        if blocking_evidence:
             case.status = "Awaiting Evidence"
         else:
             case.status = "Ready for Review"
@@ -840,8 +1007,12 @@ def investigate_case(case_id):
     )
 
     return redirect(
-        url_for("case_detail", case_id=case.id)
+        url_for(
+            "case_detail",
+            case_id=case.id
+        )
     )
+
 
 # ==========================================
 # DATABASE INITIALIZATION
@@ -851,7 +1022,12 @@ with app.app_context():
     db.create_all()
 
 
+# ==========================================
+# APPLICATION START
+# ==========================================
+
 if __name__ == "__main__":
+
     app.run(
         host="127.0.0.1",
         port=5000,

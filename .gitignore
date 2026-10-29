@@ -1,11 +1,24 @@
 
-.env
+# Python virtual environments
+venv/
 .venv/
-instance/
+
+# Python cache
 __pycache__/
 *.pyc
+
+# API keys
+.env
+.env.*
+!.env.example
+
+# Database and backups
+instance/
+backup/
 *.db
 *.sqlite
 *.sqlite3
-monitored_logs/
+
+# Generated test data
+siem_3500_test.csv
 *.log
