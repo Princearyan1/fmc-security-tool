@@ -1013,6 +1013,57 @@ def investigate_case(case_id):
         )
     )
 
+# ==========================================
+# DELETE INVESTIGATION CASE
+# ==========================================
+
+@app.route("/cases/<int:case_id>/delete", methods=["POST"])
+def delete_case(case_id):
+
+    case = db.get_or_404(SecurityCase, case_id)
+    employee_id = case.employee_id
+
+    try:
+        # Delete saved AI reports
+        InvestigationReport.query.filter_by(
+            case_id=case_id
+        ).delete(synchronize_session=False)
+
+        # Delete all related security events
+        SecurityEvent.query.filter_by(
+            case_id=case_id
+        ).delete(synchronize_session=False)
+
+        # Delete uploaded evidence records
+        EvidenceUpload.query.filter_by(
+            case_id=case_id
+        ).delete(synchronize_session=False)
+
+        # Delete the investigation case
+        db.session.delete(case)
+        db.session.flush()
+
+        # Keep employee if other cases exist
+        other_case = SecurityCase.query.filter_by(
+            employee_id=employee_id
+        ).first()
+
+        if other_case is None:
+            employee = db.session.get(Employee, employee_id)
+            if employee:
+                db.session.delete(employee)
+
+        db.session.commit()
+
+        flash("Investigation case deleted successfully.", "success")
+
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Case deletion failed")
+        flash("Unable to delete investigation case.", "error")
+
+    return redirect(url_for("dashboard"))
+
 
 # ==========================================
 # DATABASE INITIALIZATION

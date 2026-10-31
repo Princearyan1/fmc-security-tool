@@ -116,12 +116,31 @@
                     </td>
 
                     <td>
-                        <a class="action-link"
-                           href="{{ url_for('case_detail',
-                                          case_id=case.id) }}">
-                            Investigate →
-                        </a>
-                    </td>
+    <div style="display:flex;align-items:center;gap:14px;">
+
+        <a class="action-link"
+           href="{{ url_for('case_detail', case_id=case.id) }}">
+            Investigate →
+        </a>
+
+        <form method="POST"
+              action="{{ url_for('delete_case', case_id=case.id) }}"
+              onsubmit="return confirm('Permanently delete case FMC-{{ '%04d' | format(case.id) }} and all its evidence?');">
+
+            <button type="submit"
+                    style="background:#562832;
+                           color:#ffb4bf;
+                           border:1px solid #83414c;
+                           border-radius:6px;
+                           padding:8px 12px;
+                           cursor:pointer;">
+                Delete
+            </button>
+
+        </form>
+
+    </div>
+</td>
                 </tr>
 
             {% else %}
